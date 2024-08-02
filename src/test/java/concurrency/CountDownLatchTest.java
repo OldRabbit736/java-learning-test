@@ -1,10 +1,16 @@
 package concurrency;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * CountDownLatch를 이용해 스레드끼리 서로 협력할 수 있다.
@@ -79,14 +85,47 @@ public class CountDownLatchTest {
                 // worker 스레드들은 start 신호가 떨어지길 기다림
                 startSignal.await();
                 doWork();
+            } catch (InterruptedException exception) {
+            } finally {
                 // worker는 일을 끝내고 카운트다운을 함으로써 일의 진척도를 알릴 수 있다.
                 doneSignal.countDown();
-            } catch (InterruptedException exception) {
             }
         }
 
         void doWork() throws InterruptedException {
             Thread.sleep(1000);
+        }
+    }
+
+    @DisplayName("카운트다운래치와 스레드풀을 같이 사용할 수 있다.")
+    @Test
+    void contDownLatchWithThreadPool() throws InterruptedException {
+        int doneCount = 10;
+        CountDownLatch startSignal = new CountDownLatch(1);
+        CountDownLatch doneSignal = new CountDownLatch(doneCount);
+
+        // try-with-resources -> 자동으로 close() 메소드를 호출해준다.
+        // https://mangkyu.tistory.com/217
+        try (ExecutorService es = Executors.newFixedThreadPool(doneCount)) {
+            for (int i = 0; i < doneCount; i++) {
+                es.submit(new Worker(startSignal, doneSignal));
+            }
+
+            System.out.println("worker 아직 시작하지마");
+            assertThat(startSignal.getCount()).isEqualTo(1);
+            assertThat(doneSignal.getCount()).isEqualTo(doneCount);
+            Thread.sleep(1000);
+
+            System.out.println("worker 일 시작!");
+            startSignal.countDown();
+            assertThat(startSignal.getCount()).isEqualTo(0);
+            assertThat(doneSignal.getCount()).isEqualTo(doneCount);
+
+            System.out.println("worker들이 일을 끝내길 기다림");
+            doneSignal.await();
+            System.out.println("오늘 하루 일과 끝. 다 집에 가자.");
+            assertThat(startSignal.getCount()).isEqualTo(0);
+            assertThat(doneSignal.getCount()).isEqualTo(0);
         }
     }
 
